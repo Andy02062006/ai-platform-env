@@ -1,0 +1,162 @@
+# openenv.yaml
+# Metadata descriptor for AIPlatformEnv following the OpenEnv specification.
+# This file is consumed by OpenEnv tooling for registration, discovery,
+# and automated evaluation harness generation.
+
+# ── Identity ───────────────────────────────────────────────────────────────
+name: AIPlatformEnv
+version: "0.1.0"
+description: >
+  An OpenEnv environment in which an AI agent interacts with a simulated
+  AI platform by submitting natural-language queries, selecting among
+  candidate responses, and rating response quality. Supports three
+  task difficulties — easy (factual Q&A), medium (multi-step summarisation),
+  and hard (code generation / debugging).
+
+# ── Author ─────────────────────────────────────────────────────────────────
+author:
+  name: Your Name
+  email: your-email@example.com
+  organisation: Your Organisation   # optional
+
+# ── Repository & licensing ─────────────────────────────────────────────────
+repository: https://github.com/your-org/ai-platform-env
+license: MIT
+
+# ── Python runtime ─────────────────────────────────────────────────────────
+python_requires: ">=3.10"
+dependencies:
+  - pydantic>=2.0
+  - openai>=1.0
+  - anthropic>=0.20
+  # - openenv   # uncomment once published on PyPI
+
+# ── Entry points ───────────────────────────────────────────────────────────
+entry_points:
+  env_class: env.AIPlatformEnv      # import path for the environment class
+  baseline:  baseline.main          # import path for the baseline agent
+
+# ── Interface models ───────────────────────────────────────────────────────
+# References to the Pydantic models that define the agent–env contract.
+models:
+  action:
+    module: models
+    class: Action
+    fields:
+      type:
+        dtype: string
+        values: [submit_query, select_response, rate_response, refine_query, plan_task, compare_responses, summarize]
+        description: The kind of action to perform.
+      query:
+        dtype: string
+        optional: true
+        description: Query string; required when type=submit_query.
+      selected_index:
+        dtype: integer
+        optional: true
+        constraints: {ge: 0}
+        description: Zero-based index of chosen response; required when type=select_response.
+      score:
+        dtype: float
+        optional: true
+        constraints: {ge: 0.0, le: 1.0}
+        description: Quality rating in [0,1]; required when type=rate_response.
+      plan:
+        dtype: string
+        optional: true
+        description: Plan description; required when type=plan_task.
+
+  observation:
+    module: models
+    class: Observation
+    fields:
+      responses:
+        dtype: list[Response]
+        description: Candidate responses returned by the AI platform.
+      history:
+        dtype: list[string]
+        description: Chronological list of all queries submitted this episode.
+
+  response:
+    module: models
+    class: Response
+    fields:
+      text:
+        dtype: string
+        description: Full text of the platform response.
+      relevance:
+        dtype: float
+        constraints: {ge: 0.0, le: 1.0}
+        description: How relevant the response is to the query.
+      confidence:
+        dtype: float
+        constraints: {ge: 0.0, le: 1.0}
+        description: Platform's self-reported confidence in the response.
+
+  reward:
+    module: models
+    class: Reward
+    fields:
+      value:
+        dtype: float
+        description: Scalar reward signal for the most recent action.
+
+# ── Tasks ──────────────────────────────────────────────────────────────────
+tasks:
+
+  easy:
+    key: easy
+    difficulty: easy
+    description: >
+      Single-turn factual Q&A. The agent submits one query asking for
+      the capital city of France, selects the best response, and rates it.
+    max_turns: 3
+    # Expected score range for a random agent vs. a well-tuned agent.
+    score_range: {random: 0.20, baseline: 0.90, optimal: 1.00}
+    grader:
+      module: tasks
+      function: grade_easy
+    target_keywords: [france, capital, paris, city]
+
+  medium:
+    key: medium
+    difficulty: medium
+    description: >
+      Multi-step summarisation. The agent iteratively refines up to 3 queries
+      to obtain a comprehensive summary of the French Revolution covering
+      both causes and consequences.
+    max_turns: 8
+    score_range: {random: 0.15, baseline: 0.75, optimal: 1.00}
+    grader:
+      module: tasks
+      function: grade_medium
+    target_keywords: [french revolution, summary, causes, consequences, effects]
+
+  hard:
+    key: hard
+    difficulty: hard
+    description: >
+      Code generation and debugging. The agent queries the platform up to
+      5 times to produce a correct Python implementation of
+      binary_search(arr, target) that passes a suite of unit tests.
+    max_turns: 12
+    score_range: {random: 0.10, baseline: 0.65, optimal: 1.00}
+    grader:
+      module: tasks
+      function: grade_hard
+    target_keywords: [binary search, python, function, index, sorted, debug]
+
+# ── Evaluation protocol ────────────────────────────────────────────────────
+evaluation:
+  seed: 42                        # RNG seed for reproducibility
+  episodes_per_task: 1            # number of episodes used to compute a score
+  aggregation: mean               # how task scores are combined (mean | min | weighted)
+  score_range: [0.0, 1.0]
+  deterministic: true             # same seed always produces the same scores
+
+# ── Docker ─────────────────────────────────────────────────────────────────
+docker:
+  image: aiplatformenv:0.1.0
+  build_context: .
+  dockerfile: Dockerfile
+  default_command: ["python", "baseline.py"]
