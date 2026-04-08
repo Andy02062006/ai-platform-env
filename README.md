@@ -1,3 +1,12 @@
+---
+title: AI Platform Env
+emoji: 🤖
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # AIPlatformEnv
 
 > An [OpenEnv](https://github.com/openenv)-compatible benchmark where an AI agent learns to interact with an AI platform — submitting queries, selecting responses, and rating quality — across three task difficulties.
