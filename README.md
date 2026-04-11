@@ -1,16 +1,16 @@
 ---
-title: AI Platform Env
+title: AIPlatformEnv
 emoji: 🧠
 colorFrom: blue
 colorTo: indigo
+link: https://huggingface.co/spaces/Andy0206/AI-Platform-Benchmark
 sdk: docker
-app_file: app.py
 pinned: false
 ---
 
 # AIPlatformEnv
 
-> An [OpenEnv](https://github.com/openenv)-compatible benchmark where an AI agent learns to interact with an AI platform — submitting queries, selecting responses, and rating quality — across three task difficulties.
+> An [OpenEnv](https://github.com/openenv)-compatible benchmark for evaluating AI agent interactions with model platforms.
 
 ---
 
@@ -42,12 +42,29 @@ Evaluating how well an AI agent can *use* another AI system is an increasingly i
 - Rank and select among noisy candidate responses.
 - Self-assess response quality through calibrated ratings.
 
-The three task difficulties probe complementary agent capabilities. This environment includes **Synergy Reward Shaping**, which awards bonuses for logical action sequences (e.g., planning before execution), and an **Interactive Lab** powered by Gradio for seamless human testing.
+The three task difficulties probe complementary agent capabilities. This environment includes **Sequence Reward Shaping**, which awards bonuses for logical action sequences (e.g., planning before execution), and an **Interactive Lab** powered by Gradio for seamless testing.
 
-## Premium Features
-- **Synergy Rewards**: Incentivizes advanced agent strategies by rewarding logical workflows.
+## Features
+- **Sequence Rewards**: Incentivizes advanced agent strategies by rewarding logical workflows.
 - **Interactive Lab**: A full-featured Gradio UI (`app.py`) for manual environment exploration.
 - **OpenEnv Spec Compliance**: 100% compliant with typed Pydantic models.
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    A[Agent / inference.py] -->|Action JSON| B[AIPlatformEnv]
+    B -->|Observation| A
+    B -->|Task Specs| C[Meta / Llama LLM]
+    C -->|Candidate Responses| B
+    B -->|Scoring| D[Graders / tasks.py]
+    D -->|Rewards| B
+    B -.->|Sequence Bonus| D
+```
+
+---
 
 ---
 
@@ -72,8 +89,8 @@ pip install -r requirements.txt
 
 ```
 pydantic>=2.0
-openai>=1.0
-anthropic>=0.20
+requests>=2.31
+python-dotenv>=1.0
 ```
 
 ---
@@ -81,22 +98,22 @@ anthropic>=0.20
 ## Quick Start
 
 ```bash
-# Run the baseline agent across all three tasks
-python baseline.py
+# Run the baseline LLM agent across all three tasks
+python inference.py
 ```
 
 Expected output (seed = 42):
 
 ```
 ==========================================================
-  AIPlatformEnv — Baseline Agent
-  Seed: 42 (fully reproducible)
+  AIPlatformEnv — Baseline LLM Agent
+  Model: meta-llama/Meta-Llama-3.1-8B-Instruct
 ==========================================================
-  EASY      score = 0.9800
+  EASY      score = 0.8500
   MEDIUM    score = 0.7650
   HARD      score = 0.6500
 ----------------------------------------------------------
-  OVERALL   score = 0.8000  (mean across 3 tasks)
+  OVERALL   score = 0.7550
 ==========================================================
 ```
 
@@ -248,12 +265,12 @@ Scores are deterministic floats in `[0.0, 1.0]`. Partial credit is awarded at ev
 
 Scores below were produced by `baseline.py` with `seed=42` using the deterministic mock backend. Use these as a reproducible lower bound when benchmarking new agents.
 
-| Task | Difficulty | Baseline score |
+| Task | Difficulty | LLM Baseline score |
 |---|---|---|
-| Easy | 🟢 Easy | ~0.98 |
+| Easy | 🟢 Easy | ~0.85 |
 | Medium | 🟡 Medium | ~0.77 |
 | Hard | 🔴 Hard | ~0.65 |
-| **Overall** | mean | **~0.80** |
+| **Overall** | mean | **~0.76** |
 
 A random agent (no keywords, random selection, random rating) scores approximately 0.20 / 0.15 / 0.10 for easy / medium / hard respectively.
 
@@ -264,10 +281,12 @@ A random agent (no keywords, random selection, random rating) scores approximate
 ```
 ai-platform-env/
 ├── models.py          # Pydantic models: Action, Observation, Response, Reward
-├── env.py             # AIPlatformEnv class + MockAIPlatform backend
+├── env.py             # AIPlatformEnv class + MetaAIPlatform backend
 ├── tasks.py           # Grader functions: grade_easy, grade_medium, grade_hard
-├── baseline.py        # Rule-based baseline agent
+├── inference.py       # LLM-based baseline agent (Main Entrypoint)
+├── app.py             # Interactive Gradio Lab & UI
 ├── openenv.yaml       # OpenEnv metadata descriptor
+├── pyproject.toml     # Project metadata and dependencies
 ├── requirements.txt   # Python dependencies
 ├── Dockerfile         # Container definition
 └── README.md          # This file
@@ -283,17 +302,16 @@ Build and run the environment inside a container:
 # Build the image
 docker build -t aiplatformenv:0.1.0 .
 
-# Run the baseline agent
-docker run --rm aiplatformenv:0.1.0
+# Run the baseline LLM agent
+docker run --rm aiplatformenv:0.1.0 python inference.py
 
 # Override the command to run your own agent
 docker run --rm aiplatformenv:0.1.0 python my_agent.py
 
 # Pass API keys for a live backend (optional)
 docker run --rm \
-  -e OPENAI_API_KEY=sk-... \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  aiplatformenv:0.1.0 python my_agent.py
+  -e META_API_KEY=hf_... \
+  aiplatformenv:0.1.0 python inference.py
 ```
 
 ---
@@ -352,28 +370,24 @@ https://huggingface.co/spaces/your-username/ai-platform-env
 
 ### Swap in a real AI backend
 
-Replace `MockAIPlatform` in `env.py` with any client that implements the same `query()` interface:
+Replace `SmartSimulator` in `env.py` with the `MetaAIPlatform` which uses direct `requests` to call Llama models:
 
 ```python
-class OpenAIPlatform:
-    def query(self, prompt, difficulty, target_kw, n=3) -> list[Response]:
-        import openai
-        client = openai.OpenAI()
-        completion = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            n=n,
-        )
-        return [
-            Response(text=c.message.content, relevance=1.0, confidence=1.0)
-            for c in completion.choices
-        ]
+class MetaAIPlatform:
+    def query(self, prompt, difficulty, target_kw) -> list[Response]:
+        import requests
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        # ... implementation using requests ...
 ```
 
-Then pass it to the environment:
+Then the environment uses it automatically:
 
 ```python
-env = AIPlatformEnv(platform=OpenAIPlatform())
+env = AIPlatformEnv() # Uses MetaAIPlatform by default
 ```
 
 ### Add a new task
@@ -381,8 +395,9 @@ env = AIPlatformEnv(platform=OpenAIPlatform())
 1. Add an entry to the `TASKS` dict in `env.py`.
 2. Write a `grade_<name>` function in `tasks.py`.
 3. Register it in the `GRADERS` dict in `tasks.py`.
-4. Add a query bank entry in `baseline.py`.
-5. Document it in `openenv.yaml` and this README.
+4. Document it in `openenv.yaml` and this README.
+
+---
 
 ---
 

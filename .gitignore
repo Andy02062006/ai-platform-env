@@ -1,3 +1,28 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Environment / Secrets
 .env
+.env.*
+!.env.example
+HF_TOKEN
+API_KEY
+META_API_KEY
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
+uv.lock
