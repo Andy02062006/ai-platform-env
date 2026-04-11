@@ -1,6 +1,6 @@
 ---
 title: AI Platform Env
-emoji: brain
+emoji: 🧠
 colorFrom: blue
 colorTo: indigo
 sdk: docker
