@@ -212,7 +212,7 @@ class OpenAIPlatform:
     def __init__(self, model=None):
         self.model = model or os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.3")
         self.client = OpenAI(
-            api_key=os.getenv("HF_TOKEN"),
+            api_key=os.getenv("HF_TOKEN", ""),
             base_url=os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
         )
 

@@ -1,0 +1,13 @@
+{
+    "include": [
+        "."
+    ],
+    "exclude": [
+        "**/__pycache__"
+    ],
+    "extraPaths": [
+        "."
+    ],
+    "reportMissingImports": true,
+    "typeCheckingMode": "basic"
+}

@@ -8,21 +8,26 @@ Compliant with OpenEnv structured logging requirements.
 import os
 import json
 import textwrap
+import sys
+from pathlib import Path
 from typing import List, Optional
+
+# Add current directory to path to ensure robust imports in all environments
+sys.path.append(str(Path(__file__).parent.absolute()))
+
 from openai import OpenAI
 from models import Action
 from env import AIPlatformEnv
 
 # Environment configuration
-# Mandatory: API_BASE_URL, MODEL_NAME, HF_TOKEN
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
-HF_TOKEN = os.getenv("HF_TOKEN")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.3")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 
-# Optional: if you use from_docker_image()
+# Optional - if you use from_docker_image():
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-IMAGE_NAME = os.getenv("IMAGE_NAME") # Alternative name often used
-API_KEY = HF_TOKEN or os.getenv("API_KEY") # Backward compatibility
+# Backward compatibility
+API_KEY = HF_TOKEN
 
 # Benchmark configuration
 BENCHMARK = "AIPlatformEnv"
@@ -90,59 +95,6 @@ def get_model_action(client: OpenAI, history: List[str], current_obs: str) -> Ac
             return Action(type="submit_query", query="Tell me more about this topic.")
         return Action(type="select_response", selected_index=0)
 
-def run_task(task_name: str):
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    env = AIPlatformEnv(seed=42)
-    
-    rewards: List[float] = []
-    steps_taken = 0
-    score = 0.0
-    success = False
-
-    log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
-
-    try:
-        obs, info = env.reset(task_name)
-        history: List[str] = []
-        
-        for step in range(1, MAX_STEPS + 1):
-            if env.is_done:
-                break
-
-            obs_summary = f"Responses: {len(obs.responses)}, History: {len(obs.history)} turns"
-            action = get_model_action(client, history, obs_summary)
-
-            obs, reward, terminated, truncated, info = env.step(action)
-            
-            reward_val = reward.value
-            done = terminated or truncated
-            error = None
-
-            rewards.append(reward_val)
-            steps_taken = step
-            
-            log_step(step=step, action=action.type, reward=reward_val, done=done, error=error)
-            
-            history.append(f"Step {step}: {action.type} -> reward {reward_val:.2f}")
-
-            if done:
-                break
-
-        # Get final score from grader
-        from tasks import GRADERS
-        state = env.state()
-        history_actions = [] # The environment state tracks history as strings, we might need better tracking if grader needs exact Action objects
-        # But our graders take Sequence[Action] and Dict.
-        # Wait, I should track actions in a list.
-        
-        # Actually, let's re-run the loop with action tracking for the grader
-    except Exception as e:
-        print(f"[DEBUG] Error during inference: {e}")
-    finally:
-        # Re-calculating score using the actual grader
-        # This is a bit tricky because GRADERS expect Action objects.
-        # I'll modify the loop slightly to keep track of actions.
-        pass
 
 def main():
     # Corrected loop with action tracking

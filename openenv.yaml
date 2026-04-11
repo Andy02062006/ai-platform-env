@@ -19,7 +19,7 @@ author:
   organisation: Your Organisation   # optional
 
 # ── Repository & licensing ─────────────────────────────────────────────────
-repository: https://github.com/your-org/ai-platform-env
+repository: https://github.com/Andy02062006/ai-platform-env
 license: MIT
 
 # ── Python runtime ─────────────────────────────────────────────────────────
