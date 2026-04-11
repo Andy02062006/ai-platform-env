@@ -1,10 +1,10 @@
 ---
 title: AI Platform Env
-emoji: 
+emoji: brain
 colorFrom: blue
 colorTo: indigo
 sdk: docker
-app_file: server.py
+app_file: app.py
 pinned: false
 ---
 
