@@ -95,11 +95,6 @@ def run_episode(
     score = grader(actions, env_state)
     return score, actions
 
-    env_state = env.state()
-    grader = GRADERS[difficulty]
-    score = grader(actions, env_state)
-    return score, actions
-
 def main() -> None:
     env = AIPlatformEnv(seed=SEED)
     difficulties = ["easy", "medium", "hard"]

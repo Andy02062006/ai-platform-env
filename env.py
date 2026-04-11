@@ -87,30 +87,30 @@ _TASK_REGISTRY: Dict[str, Task] = {
     t.key: t
     for t in [
         Task(
-            key="capital_cities",
-            prompt_template="Answer geography questions about world capitals.",
+            key="factual_qa_evaluation",
+            prompt_template="Evaluate and rate candidate responses for factual Q&A about world geography.",
             difficulty="easy",
-            target_keywords=["capital", "city", "country", "located"],
+            target_keywords=["capital", "city", "country", "located", "paris", "france"],
         ),
         Task(
-            key="french_revolution",
-            prompt_template="Build a comprehensive summary of the French Revolution.",
+            key="multi_document_summarization",
+            prompt_template="Refine queries to produce a high-quality multi-perspective summary of historical events like the French Revolution.",
             difficulty="medium",
-            target_keywords=["french revolution", "summary", "causes", "history", "consequences", "bastille"],
+            target_keywords=["summary", "causes", "consequences", "perspective", "detailed", "comprehensive"],
         ),
         Task(
-            key="code_generation",
-            prompt_template="Generate correct, idiomatic Python code snippets.",
+            key="code_review_and_optimization",
+            prompt_template="Query and refine Python code implementations for algorithms, ensuring they are optimized and idiomatic.",
             difficulty="hard",
-            target_keywords=["def", "return", "class", "import", "python"],
+            target_keywords=["search", "algorithm", "complexity", "optimization", "python", "performance"],
         ),
     ]
 }
 
 # Convenience aliases so callers can use difficulty labels directly.
-_TASK_REGISTRY["easy"] = _TASK_REGISTRY["capital_cities"]
-_TASK_REGISTRY["medium"] = _TASK_REGISTRY["french_revolution"]
-_TASK_REGISTRY["hard"] = _TASK_REGISTRY["code_generation"]
+_TASK_REGISTRY["easy"] = _TASK_REGISTRY["factual_qa_evaluation"]
+_TASK_REGISTRY["medium"] = _TASK_REGISTRY["multi_document_summarization"]
+_TASK_REGISTRY["hard"] = _TASK_REGISTRY["code_review_and_optimization"]
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +363,7 @@ class AIPlatformEnv:
         self._history: List[str] = []
         self._last_responses: List[Response] = []
         self._total_reward: float = 0.0
+        self._last_action_type: Optional[str] = None
         self._done: bool = True  # Require reset() before first step().
 
     # ------------------------------------------------------------------
@@ -405,6 +406,7 @@ class AIPlatformEnv:
         self._history = []
         self._last_responses = []
         self._total_reward = 0.0
+        self._last_action_type = None
         self._done = False
 
         obs = Observation(responses=[], history=[])
@@ -414,6 +416,17 @@ class AIPlatformEnv:
             "max_turns": self._task.max_turns,
         }
         return obs, info
+
+    @classmethod
+    async def from_docker_image(cls, image_name: Optional[str] = None) -> "AIPlatformEnv":
+        """Async factory method to support OpenEnv's standard initialization pattern.
+        In this local implementation, it simply returns a new instance.
+        """
+        return cls()
+
+    async def close(self) -> None:
+        """Async cleanup method to support OpenEnv's standard lifecycle pattern."""
+        pass
 
     def step(self, action: Action) -> Tuple[Observation, Reward, bool, bool, Dict[str, Any]]:
         """Advance the environment by one turn with production-grade grading logic."""
@@ -439,6 +452,20 @@ class AIPlatformEnv:
         
         if is_wasted:
             reward_value -= 0.3
+            
+        # 5. Synergy Bonuses (+0.1 to +0.2)
+        synergy_bonus = 0.0
+        if self._last_action_type == "plan_task" and action.type == "submit_query":
+            synergy_bonus = 0.15
+        elif self._last_action_type == "compare_responses" and action.type == "refine_query":
+            synergy_bonus = 0.20
+        elif self._last_action_type == "submit_query" and action.type == "rate_response":
+            synergy_bonus = 0.10
+        elif self._last_action_type == "refine_query" and action.type == "select_response":
+            synergy_bonus = 0.15
+            
+        reward_value += synergy_bonus
+        self._last_action_type = action.type
             
         self._total_reward += reward_value
         summary = self._summarise(action, reward_value)

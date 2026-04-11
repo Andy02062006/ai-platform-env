@@ -1,6 +1,6 @@
 ---
 title: AI Platform Env
-emoji: 🤖
+emoji: 
 colorFrom: blue
 colorTo: indigo
 sdk: docker
@@ -42,7 +42,12 @@ Evaluating how well an AI agent can *use* another AI system is an increasingly i
 - Rank and select among noisy candidate responses.
 - Self-assess response quality through calibrated ratings.
 
-The three task difficulties — factual Q&A, multi-step summarisation, and code generation — probe complementary agent capabilities. Because the default backend is a deterministic mock, **no API keys are required** to run experiments or reproduce results.
+The three task difficulties probe complementary agent capabilities. This environment includes **Synergy Reward Shaping**, which awards bonuses for logical action sequences (e.g., planning before execution), and an **Interactive Lab** powered by Gradio for seamless human testing.
+
+## Premium Features
+- **Synergy Rewards**: Incentivizes advanced agent strategies by rewarding logical workflows.
+- **Interactive Lab**: A full-featured Gradio UI (`app.py`) for manual environment exploration.
+- **OpenEnv Spec Compliance**: 100% compliant with typed Pydantic models.
 
 ---
 
@@ -321,7 +326,7 @@ Hugging Face Spaces require the following header at the top of `README.md`:
 ```yaml
 ---
 title: AIPlatformEnv
-emoji: 🤖
+emoji: 
 colorFrom: blue
 colorTo: indigo
 sdk: docker

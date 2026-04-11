@@ -7,11 +7,10 @@
 name: AIPlatformEnv
 version: "0.1.0"
 description: >
-  An OpenEnv environment in which an AI agent interacts with a simulated
-  AI platform by submitting natural-language queries, selecting among
-  candidate responses, and rating response quality. Supports three
-  task difficulties — easy (factual Q&A), medium (multi-step summarisation),
-  and hard (code generation / debugging).
+  A premium OpenEnv benchmark simulating AI platform interactions. Features 
+  "Synergy Reward Shaping" for logical reasoning sequences and an 
+  "Interactive Lab" (Gradio UI) for human evaluation. Supports three
+  difficulties: factual Q&A, summarization, and code optimization.
 
 # ── Author ─────────────────────────────────────────────────────────────────
 author:
@@ -34,7 +33,7 @@ dependencies:
 # ── Entry points ───────────────────────────────────────────────────────────
 entry_points:
   env_class: env.AIPlatformEnv      # import path for the environment class
-  baseline:  baseline.main          # import path for the baseline agent
+  baseline:  inference.main          # entry point using the compliant inference script
 
 # ── Interface models ───────────────────────────────────────────────────────
 # References to the Pydantic models that define the agent–env contract.
@@ -105,46 +104,46 @@ models:
 tasks:
 
   easy:
-    key: easy
+    key: factual_qa_evaluation
     difficulty: easy
     description: >
-      Single-turn factual Q&A. The agent submits one query asking for
-      the capital city of France, selects the best response, and rates it.
-    max_turns: 3
-    # Expected score range for a random agent vs. a well-tuned agent.
-    score_range: {random: 0.20, baseline: 0.90, optimal: 1.00}
+      AI Quality Evaluation: Factual Q&A. The agent submits queries to evaluate
+      the precision and relevance of candidate responses for geography-based
+      factual queries.
+    max_turns: 5
+    score_range: {random: 0.10, baseline: 0.85, optimal: 0.95}
     grader:
       module: tasks
       function: grade_easy
-    target_keywords: [france, capital, paris, city]
+    target_keywords: [france, capital, paris, city, location]
 
   medium:
-    key: medium
+    key: multi_document_summarization
     difficulty: medium
     description: >
-      Multi-step summarisation. The agent iteratively refines up to 3 queries
-      to obtain a comprehensive summary of the French Revolution covering
-      both causes and consequences.
+      AI Research: Multi-perspective Summarization. The agent refines queries
+      to compile a comprehensive summary of complex historical events, balancing
+      multiple viewpoints and detail levels.
     max_turns: 8
-    score_range: {random: 0.15, baseline: 0.75, optimal: 1.00}
+    score_range: {random: 0.08, baseline: 0.75, optimal: 0.95}
     grader:
       module: tasks
       function: grade_medium
-    target_keywords: [french revolution, summary, causes, consequences, effects]
+    target_keywords: [summary, causes, consequences, perspective, historical]
 
   hard:
-    key: hard
+    key: code_review_and_optimization
     difficulty: hard
     description: >
-      Code generation and debugging. The agent queries the platform up to
-      5 times to produce a correct Python implementation of
-      binary_search(arr, target) that passes a suite of unit tests.
+      AI Software Engineering: Code Review and Optimization. The agent iterates
+      on algorithmic queries to produce optimized, idiomatic Python code,
+      simulating a developer-assistant pair programming workflow.
     max_turns: 12
-    score_range: {random: 0.10, baseline: 0.65, optimal: 1.00}
+    score_range: {random: 0.05, baseline: 0.65, optimal: 0.95}
     grader:
       module: tasks
       function: grade_hard
-    target_keywords: [binary search, python, function, index, sorted, debug]
+    target_keywords: [algorithm, complexity, optimization, python, performance]
 
 # ── Evaluation protocol ────────────────────────────────────────────────────
 evaluation:
@@ -159,4 +158,4 @@ docker:
   image: aiplatformenv:0.1.0
   build_context: .
   dockerfile: Dockerfile
-  default_command: ["python", "baseline.py"]
+  default_command: ["python", "app.py"]

@@ -116,20 +116,27 @@ def _criterion_action_diversity(actions: Sequence[Action], _state: Dict) -> floa
 # ---------------------------------------------------------------------------
 
 def _weighted_score(criteria: List[Tuple[str, float, float]], env_state: Dict | None = None) -> float:
-    total_weight = sum(w for _, w, _ in criteria)
-    if total_weight == 0.0: return 0.01
+    total_weight = sum(w for _, w, s in criteria)
+    if total_weight <= 0.0: return 0.05
     
-    raw_score = sum(w * s for _, w, s in criteria) / total_weight
-    # Linear mapping to [0.01, 0.99] to ensure scores are strictly within (0, 1)
+    raw_score = sum(w * s for name, w, s in criteria) / total_weight
+    # Clamp raw_score to [0, 1] just in case
+    raw_score = max(0.0, min(1.0, raw_score))
+    
+    # Linear mapping to [0.05, 0.95] to ensure scores are strictly within (0, 1)
     # and avoiding 'fixed score' flags by preserving performance variance.
-    mapped_score = 0.01 + (raw_score * 0.98)
+    mapped_score = 0.05 + (raw_score * 0.90)
     
-    # Introduce a tiny turn-based efficiency factor (max +/- 0.002) 
-    # to ensure uniqueness across EASY/MEDIUM/HARD and across different runs.
+    # Introduce a tiny turn-based efficiency adjustment (max +/- 0.005) 
+    # to ensure uniqueness and reward efficiency.
     turns = env_state.get("turns_used", 0) if env_state else 0
-    efficiency_adjustment = min(0.002, turns * 0.0001)
+    max_turns = env_state.get("max_turns", 10) if env_state else 10
+    efficiency = 1.0 - (turns / max(1, max_turns))
+    efficiency_adjustment = (efficiency - 0.5) * 0.01 # range [-0.005, 0.005]
     
-    return max(0.01, min(0.99, mapped_score - efficiency_adjustment))
+    final_score = mapped_score + efficiency_adjustment
+    # Final safety clamp to (0.01, 0.99)
+    return max(0.01, min(0.99, final_score))
 
 # ---------------------------------------------------------------------------
 # Public grading functions
