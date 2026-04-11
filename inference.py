@@ -166,8 +166,8 @@ def main():
             if grader_fn:
                 final_score = grader_fn(actions_taken, env.state())
             
-            # Ensure strictly between 0 and 1
-            final_score = max(0.01, min(1.0, final_score))
+            # Ensure strictly between 0 and 1 (0.0 < score < 1.0)
+            final_score = max(0.01, min(0.99, final_score))
             success = final_score >= 0.5
             
             log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
