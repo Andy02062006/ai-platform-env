@@ -12,13 +12,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-# Add current directory to path to ensure robust imports in all environments
-sys.path.append(str(Path(__file__).parent.absolute()))
-
-from openai import OpenAI
-
-from models import Action
-from env import AIPlatformEnv
+from server.models import Action
+from server.env import AIPlatformEnv
 
 # OpenEnv Compliance Configuration
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")

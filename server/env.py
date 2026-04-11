@@ -33,7 +33,7 @@ load_dotenv()
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from models import Action, Observation, Response, Reward
+from server.models import Action, Observation, Response, Reward
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -6,7 +6,7 @@ Grading functions for the AI platform reinforcement-learning environment.
 
 from __future__ import annotations
 from typing import Callable, Dict, List, Sequence, Tuple
-from models import Action, Response
+from server.models import Action, Response
 
 GraderFn = Callable[[Sequence[Action], Dict], float]
 

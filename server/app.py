@@ -1,7 +1,7 @@
 import gradio as gr
 from fastapi import FastAPI
-from env import AIPlatformEnv
-from models import Action
+from server.env import AIPlatformEnv
+from server.models import Action
 import json
 
 app = FastAPI()
