@@ -92,10 +92,19 @@ def get_model_action(client: OpenAI, history: List[str], current_obs: str) -> Ac
 
 
 def main():
-    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-    
+    try:
+        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN or "dummy-token")
+    except Exception as e:
+        print(f"[DEBUG] Client initialization failed: {e}")
+        return
+
     for task_name in ["easy", "medium", "hard"]:
-        env = AIPlatformEnv(seed=42)
+        try:
+            env = AIPlatformEnv(seed=42)
+        except Exception as e:
+            print(f"[DEBUG] Environment initialization failed: {e}")
+            continue
+
         rewards: List[float] = []
         actions_taken = []
         steps_taken = 0
