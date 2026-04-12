@@ -137,13 +137,18 @@ class MetaAIPlatform:
         self.api_key = os.getenv("HF_TOKEN", os.getenv("META_API_KEY", ""))
         self.allow_mock = os.getenv("ALLOW_MOCK_FALLBACK", "true").lower() == "true"
         
-        if not self.api_key:
-            raise ValueError("API key (HF_TOKEN) is not set. All mocks are disabled.")
-            
-        self.client = OpenAI(base_url=self.api_url, api_key=self.api_key)
+        self.client = None
+        if self.api_key:
+            self.client = OpenAI(base_url=self.api_url, api_key=self.api_key)
 
     def query(self, prompt: str, difficulty: str, target_keywords: list[str]) -> list[Response]:
         """Query the Meta LLM and then use it as a judge to score results."""
+        if not self.client:
+            if self.allow_mock:
+                from .env import SmartSimulator
+                return SmartSimulator().query(prompt, difficulty, target_keywords)
+            raise RuntimeError("API key (HF_TOKEN) is not set and mocks are disabled.")
+
         raw_choices = []
         try:
             while len(raw_choices) < 3:

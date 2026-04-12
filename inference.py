@@ -113,22 +113,29 @@ def get_model_action(client: OpenAI, history: List[Action], current_obs: str) ->
 
 
 def main():
-    if not HF_TOKEN:
-        raise ValueError("HF_TOKEN (or META_API_KEY) environment variable is not set.")
-    
-    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+    # Deferred credential check: allowing initialization to reach [START] line
+    client = None
+    if HF_TOKEN:
+        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
     for task_name in ["easy", "medium", "hard"]:
+        log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
+        
+        if not client:
+            log_step(step=1, action="init", reward=0.0, done=True, error="HF_TOKEN was not provided.")
+            log_end(success=False, steps=0, score=0.01, rewards=[0.0])
+            continue
+
         try:
             env = AIPlatformEnv()
         except Exception as e:
-            print(f"[DEBUG] Environment initialization failed: {e}")
+            log_step(step=1, action="init", reward=0.0, done=True, error=f"Environment init failed: {e}")
+            log_end(success=False, steps=0, score=0.01, rewards=[0.0])
             continue
 
         rewards: List[float] = []
         actions_taken = []
         steps_taken = 0
-        log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
         
         try:
             obs, info = env.reset(task_name)
@@ -142,7 +149,7 @@ def main():
                     "max_turns": MAX_STEPS,
                     "responses_count": len(obs.responses),
                     "responses": [{"index": i, "text": r.text} for i, r in enumerate(obs.responses)],
-                    "history": obs.history
+                    "history": [str(h) for h in obs.history]
                 }
                 
                 action = get_model_action(client, actions_taken, json.dumps(obs_data))
@@ -165,7 +172,7 @@ def main():
             log_end(success=(final_score >= 0.5), steps=steps_taken, score=final_score, rewards=rewards)
             
         except Exception as e:
-            log_step(step=steps_taken + 1, action="error", reward=0.0, done=True, error=str(e))
+            log_step(step=steps_taken + 1, action="runtime_error", reward=0.0, done=True, error=str(e))
             log_end(success=False, steps=steps_taken, score=0.01, rewards=rewards)
 
 if __name__ == "__main__":
