@@ -145,7 +145,6 @@ class MetaAIPlatform:
         """Query the Meta LLM and then use it as a judge to score results."""
         if not self.client:
             if self.allow_mock:
-                from .env import SmartSimulator
                 return SmartSimulator().query(prompt, difficulty, target_keywords)
             raise RuntimeError("API key (HF_TOKEN) is not set and mocks are disabled.")
 
@@ -167,7 +166,6 @@ class MetaAIPlatform:
                     break
         except Exception as e:
             if self.allow_mock:
-                from .env import SmartSimulator
                 return SmartSimulator().query(prompt, difficulty, target_keywords)
             raise RuntimeError(f"API Connection Failed: {e}. Mocks are explicitly disabled.")
 
