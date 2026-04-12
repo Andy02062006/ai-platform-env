@@ -6,6 +6,8 @@ colorTo: indigo
 link: https://huggingface.co/spaces/Andy0206/AI-Platform-Benchmark
 sdk: docker
 pinned: false
+tags:
+  - openenv
 ---
 
 # AIPlatformEnv
@@ -14,40 +16,23 @@ pinned: false
 
 ---
 
-## Table of Contents
+## Motivation
 
-1. [Motivation](#motivation)
-2. [Installation](#installation)
-3. [Quick Start](#quick-start)
-4. [Environment API](#environment-api)
-   - [Actions](#actions)
-   - [Observations](#observations)
-   - [Reward](#reward)
-5. [Tasks](#tasks)
-6. [Grading](#grading)
-7. [Baseline Scores](#baseline-scores)
-8. [Project Structure](#project-structure)
-9. [Docker](#docker)
-10. [Hugging Face Deployment](#hugging-face-deployment)
-11. [Extending the Environment](#extending-the-environment)
-12. [License](#license)
+Evaluating how well an AI agent can *use* another AI system is a critical frontier for agentic AI. AIPlatformEnv provides a production-grade testbed where agents must:
+
+- **Plan Research Tasks**: Structure non-linear workflows before execution.
+- **Iterative Querying**: Refine searches when initial results are insufficient.
+- **Critical Evaluation**: Multilaterally compare candidate responses and assign precise quality ratings.
+
+The environment utilizes real **Llama-3.1 models** and an **AI-driven Judge system** to ensure all performance metrics are authentic and non-heuristic.
 
 ---
 
-## Motivation
-
-Evaluating how well an AI agent can *use* another AI system is an increasingly important benchmark class. AIPlatformEnv provides a minimal, reproducible testbed where an agent must:
-
-- Formulate effective natural-language queries.
-- Rank and select among noisy candidate responses.
-- Self-assess response quality through calibrated ratings.
-
-The three task difficulties probe complementary agent capabilities. This environment includes **Sequence Reward Shaping**, which awards bonuses for logical action sequences (e.g., planning before execution), and an **Interactive Lab** powered by Gradio for seamless testing.
-
 ## Features
-- **Sequence Rewards**: Incentivizes advanced agent strategies by rewarding logical workflows.
-- **Interactive Lab**: A full-featured Gradio UI (`app.py`) for manual environment exploration.
-- **OpenEnv Spec Compliance**: 100% compliant with typed Pydantic models.
+- **Real-World Utility**: Simulates the genuine workflow of an AI research assistant.
+- **AI-Based Judging**: Uses a secondary LLM "Judge" to calculate relevance and confidence.
+- **OpenEnv Spec Compliance**: 100% compliant with Pydantic v2 models and structured logging.
+- **Production Ready**: Full Docker support and optimized for Hugging Face Spaces.
 
 ---
 
@@ -57,80 +42,48 @@ The three task difficulties probe complementary agent capabilities. This environ
 graph TD
     A[Agent / inference.py] -->|Action JSON| B[AIPlatformEnv]
     B -->|Observation| A
-    B -->|Task Specs| C[Meta / Llama LLM]
+    B -->|Live Query| C[Meta Llama-3.1 API]
     C -->|Candidate Responses| B
-    B -->|Scoring| D[Graders / tasks.py]
-    D -->|Rewards| B
-    B -.->|Sequence Bonus| D
+    B -->|Quality Evaluation| E[Judge LLM]
+    E -->|Relevance/Confidence| B
+    B -->|Turn Rewards| A
+    B -->|Final Grade| D[Deterministic Graders]
 ```
-
----
 
 ---
 
 ## Installation
 
-**Prerequisites:** Python 3.10+
+**Prerequisites:** Python 3.10+, HF_TOKEN (Meta Llama access)
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/ai-platform-env.git
-cd ai-platform-env
+git clone https://github.com/Andy0206/AI-Platform-Benchmark.git
+cd AI-Platform-Benchmark
 
-# 2. Create and activate a virtual environment (recommended)
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
+# 2. Install dependencies
 pip install -r requirements.txt
-```
-
-`requirements.txt` includes:
-
-```
-pydantic>=2.0
-requests>=2.31
-python-dotenv>=1.0
 ```
 
 ---
 
-## Quick Start
+## Quick Start (Baseline Reproduction)
+
+The script will execute the baseline agent across Easy, Medium, and Hard tasks.
 
 ```bash
-# Run the baseline LLM agent across all three tasks
+export HF_TOKEN="your_token_here"
 python inference.py
 ```
 
-Expected output (seed = 42):
-
-```
-==========================================================
-  AIPlatformEnv — Baseline LLM Agent
-  Model: meta-llama/Meta-Llama-3.1-8B-Instruct
-==========================================================
-  EASY      score = 0.8500
-  MEDIUM    score = 0.7650
-  HARD      score = 0.6500
-----------------------------------------------------------
-  OVERALL   score = 0.7550
-==========================================================
-```
-
-To run a single task interactively:
-
-```python
-from env import AIPlatformEnv
-from models import Action
-
-env = AIPlatformEnv(seed=42)
-obs = env.reset("easy")
-
-obs, reward, done, info = env.step(
-    Action(type="submit_query", query="What is the capital of France?")
-)
-print(obs.responses[0].text)   # "The capital of France is Paris."
-print(reward.value)            # -0.05  (query cost)
+### Compliant Output Format
+```text
+[START] task=easy env=AIPlatformEnv model=meta-llama/Llama-3.1-8B-Instruct
+[STEP] step=1 action=plan_task reward=0.10 done=false error=null
+[STEP] step=2 action=submit_query reward=0.10 done=false error=null
+[STEP] step=3 action=rate_response reward=0.50 done=false error=null
+[STEP] step=4 action=select_response reward=0.40 done=true error=null
+[END] success=true steps=4 score=0.920 rewards=0.10,0.10,0.50,0.40
 ```
 
 ---
@@ -138,269 +91,84 @@ print(reward.value)            # -0.05  (query cost)
 ## Environment API
 
 ### Actions
-
-Actions are defined in `models.py` as a Pydantic model. Every action requires a `type` field; the remaining fields are conditional.
-
-| Field | Type | Required when | Description |
-|---|---|---|---|
-| `type` | `"submit_query"` \| `"select_response"` \| `"rate_response"` | always | The action to perform |
-| `query` | `str` | `type="submit_query"` | Natural-language query sent to the AI platform |
-| `selected_index` | `int ≥ 0` | `type="select_response"` | Zero-based index of the chosen response |
-| `score` | `float ∈ [0, 1]` | `type="rate_response"` | Agent's quality rating for the selected response |
-
-```python
-from models import Action
-
-# Submit a query
-Action(type="submit_query", query="Explain binary search in Python.")
-
-# Select the first response
-Action(type="select_response", selected_index=0)
-
-# Rate it
-Action(type="rate_response", score=0.92)
-```
+| Field | Type | Description |
+|---|---|---|
+| `type` | `str` | `plan_task`, `submit_query`, `refine_query`, `compare_responses`, `summarize`, `rate_response`, `select_response` |
+| `query` | `str` | Required for `submit_query` and `refine_query`. |
+| `selected_index` | `int` | Required for `select_response`. |
+| `score` | `float` | Required for `rate_response` (Agent's estimate of relevance). |
 
 ### Observations
-
-Each `step()` call returns an `Observation`:
-
 | Field | Type | Description |
 |---|---|---|
-| `responses` | `list[Response]` | Candidate responses from the AI platform for the latest query |
-| `history` | `list[str]` | All queries submitted so far this episode, oldest first |
+| `responses` | `list[Response]` | Candidate responses from the LLM backend. |
+| `history` | `list[str]` | Summary of previous action types and rewards. |
 
-Each `Response` contains:
+### Progressive Reward Signal
+The environment provides immediate feedback at every step to guide the agent:
 
-| Field | Type | Description |
+| Action | Reward | Rationale |
 |---|---|---|
-| `text` | `str` | Full response text |
-| `relevance` | `float ∈ [0, 1]` | Platform-estimated relevance to the query |
-| `confidence` | `float ∈ [0, 1]` | Platform's self-reported confidence |
-
-### Reward
-
-`step()` returns a `Reward(value: float)` after every action:
-
-| Action type | Reward signal |
-|---|---|
-| `submit_query` | `−0.05` per query (conciseness incentive) |
-| `select_response` | `+relevance` of the chosen response |
-| `rate_response` | `1.0 − |agent_score − relevance|` (calibration bonus) |
+| `plan_task` | `+0.1` | Incentivizes structured planning. |
+| `submit_query` | `+0.1` | Baseline for interaction. |
+| `refine_query` | `+0.5` | High reward for iterative improvement. |
+| `rate_response` | `+0.5` | Reward for calibration (accurate self-scoring). |
+| `select_response`| `+0.4` | Reward for selecting the optimal candidate. |
 
 ---
 
-## Tasks
+## Tasks & Grading Logic
 
-### Easy — Single-Turn Factual Q&A
+### 1. Easy — Geography QA (`easy`)
+- **Objective**: Identify the capital of a specific country.
+- **Grader Weights**: Query (20%), Positive Reward (20%), Selection Accuracy (30%), Rating Calibration (30%).
 
-| Property | Value |
-|---|---|
-| Key | `"easy"` |
-| Max turns | 1 |
-| Objective | Ask for the capital of France, select and rate the best response |
-| Primary skill | Query formulation, response selection |
+### 2. Medium — History Summarization (`medium`)
+- **Objective**: Consolidate multiple perspectives on the French Revolution.
+- **Grader Weights**: Workflow Planning (15%), Multi-turn Reasoning (20%), Comparison Usage (15%), Selection Accuracy (20%).
 
-### Medium — Multi-Step Summarisation
-
-| Property | Value |
-|---|---|
-| Key | `"medium"` |
-| Max turns | 3 |
-| Objective | Build a comprehensive summary of the French Revolution through iterative queries |
-| Primary skill | Query refinement, iterative reasoning |
-
-### Hard — Code Generation / Debugging
-
-| Property | Value |
-|---|---|
-| Key | `"hard"` |
-| Max turns | 5 |
-| Objective | Obtain a correct Python `binary_search(arr, target)` function that passes unit tests |
-| Primary skill | Code-aware querying, self-correction, functional verification |
+### 3. Hard — Algorithm Optimization (`hard`)
+- **Objective**: Research and select a correct Python implementation of Binary Search.
+- **Grader Weights**: Refinement Usage (15%), Summarization Accuracy (15%), Action Diversity (10%), Functional Selection (20%).
 
 ---
 
-## Grading
+## Baseline Scores (Live API)
 
-Each task is graded by a dedicated function in `tasks.py`. All graders share the signature:
+These scores represent the performance of a standard `Llama-3.1-8B-Instruct` model using the provided `inference.py` script.
 
-```python
-grade(task_key: str, actions: list[Action], env_state: dict) -> float
-```
-
-Scores are deterministic floats in `[0.0, 1.0]`. Partial credit is awarded at every stage — a non-completing agent always scores above zero for genuine attempts.
-
-### Easy grader (5 criteria × 0.20)
-
-1. Query submitted
-2. Query contains relevant keywords
-3. Response selected
-4. Selected response has high relevance (≥ 0.7)
-5. Rating is well-calibrated (|score − relevance| ≤ 0.1)
-
-### Medium grader (6 weighted criteria)
-
-1. Query submitted (0.15)
-2. Lexical diversity across queries (0.15)
-3. Response selected (0.20)
-4. Best response relevance ≥ 0.6 (0.20)
-5. Rating calibration (0.15)
-6. Used multiple turns (0.15)
-
-### Hard grader (8 weighted criteria)
-
-1. Query submitted (0.10)
-2. Code-relevant keywords in queries (0.10)
-3. Response selected (0.10)
-4. Response contains `def binary_search(` (0.15)
-5. Response passes structural checks — valid AST, `return`, loop (0.15)
-6. Functional correctness — unit test pass rate (0.20)
-7. Rating calibration (0.10)
-8. Self-correction attempt (0.10)
-
----
-
-## Baseline Scores
-
-Scores below were produced by `baseline.py` with `seed=42` using the deterministic mock backend. Use these as a reproducible lower bound when benchmarking new agents.
-
-| Task | Difficulty | LLM Baseline score |
+| Task | Difficulty | Reproducible Score |
 |---|---|---|
-| Easy | 🟢 Easy | ~0.85 |
-| Medium | 🟡 Medium | ~0.77 |
-| Hard | 🔴 Hard | ~0.65 |
-| **Overall** | mean | **~0.76** |
-
-A random agent (no keywords, random selection, random rating) scores approximately 0.20 / 0.15 / 0.10 for easy / medium / hard respectively.
+| Geography QA | 🟢 Easy | **~0.68** |
+| Summarization | 🟡 Medium | **~0.55** |
+| Optimization | 🔴 Hard | **~0.42** |
+| **Combined** | **Average** | **~0.55** |
 
 ---
 
-## Project Structure
+## Docker & Deployment
 
-```
-ai-platform-env/
-├── models.py          # Pydantic models: Action, Observation, Response, Reward
-├── env.py             # AIPlatformEnv class + MetaAIPlatform backend
-├── tasks.py           # Grader functions: grade_easy, grade_medium, grade_hard
-├── inference.py       # LLM-based baseline agent (Main Entrypoint)
-├── app.py             # Interactive Gradio Lab & UI
-├── openenv.yaml       # OpenEnv metadata descriptor
-├── pyproject.toml     # Project metadata and dependencies
-├── requirements.txt   # Python dependencies
-├── Dockerfile         # Container definition
-└── README.md          # This file
-```
-
----
-
-## Docker
-
-Build and run the environment inside a container:
-
+### Local Execution
 ```bash
-# Build the image
-docker build -t aiplatformenv:0.1.0 .
-
-# Run the baseline LLM agent
-docker run --rm aiplatformenv:0.1.0 python inference.py
-
-# Override the command to run your own agent
-docker run --rm aiplatformenv:0.1.0 python my_agent.py
-
-# Pass API keys for a live backend (optional)
-docker run --rm \
-  -e META_API_KEY=hf_... \
-  aiplatformenv:0.1.0 python inference.py
+docker build -t aiplatform:latest .
+docker run --rm -e HF_TOKEN=$HF_TOKEN aiplatform python inference.py
 ```
+
+### Hugging Face Spaces
+This repository is pre-configured for deployment to HF Spaces.
+1. Create a New Space with **Docker SDK**.
+2. Upload the files.
+3. Add `HF_TOKEN`, `API_BASE_URL`, and `MODEL_NAME` to **Variables and secrets**.
+4. The Space will automatically build and host the benchmark.
 
 ---
 
-## Hugging Face Deployment
-
-AIPlatformEnv can be hosted as a Hugging Face Space (Gradio or Docker SDK) for live, shareable evaluation.
-
-### 1. Create a new Space
-
-```bash
-# Install the Hugging Face CLI
-pip install huggingface_hub
-
-huggingface-cli login
-huggingface-cli repo create ai-platform-env --type space --space_sdk docker
-```
-
-### 2. Push the repository
-
-```bash
-git remote add hf https://huggingface.co/spaces/your-username/ai-platform-env
-git push hf main
-```
-
-### 3. Add a `README.md` YAML front-matter block
-
-Hugging Face Spaces require the following header at the top of `README.md`:
-
-```yaml
----
-title: AIPlatformEnv
-emoji: 
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
----
-```
-
-### 4. Configure secrets
-
-If you connect a live AI backend, add your API keys as **Space secrets** via the Hugging Face web UI (`Settings → Variables and secrets`) rather than committing them to the repository.
-
-### 5. Access the live Space
-
-Once the Docker build completes your Space will be live at:
-
-```
-https://huggingface.co/spaces/your-username/ai-platform-env
-```
-
----
-
-## Extending the Environment
-
-### Swap in a real AI backend
-
-Replace `SmartSimulator` in `env.py` with the `MetaAIPlatform` which uses direct `requests` to call Llama models:
-
-```python
-class MetaAIPlatform:
-    def query(self, prompt, difficulty, target_kw) -> list[Response]:
-        import requests
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        payload = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}]
-        }
-        # ... implementation using requests ...
-```
-
-Then the environment uses it automatically:
-
-```python
-env = AIPlatformEnv() # Uses MetaAIPlatform by default
-```
-
-### Add a new task
-
-1. Add an entry to the `TASKS` dict in `env.py`.
-2. Write a `grade_<name>` function in `tasks.py`.
-3. Register it in the `GRADERS` dict in `tasks.py`.
-4. Document it in `openenv.yaml` and this README.
-
----
+## Compliance Reference
+- **OpenEnv Spec**: `openenv.yaml` handles all metadata.
+- **Interface**: Implements `step()`, `reset()`, and `state()`.
+- **Validation**: Pass `openenv validate` with `[OK]` status.
 
 ---
 
 ## License
-
-MIT © Your Name. See [LICENSE](LICENSE) for details.
+MIT © Andy0206

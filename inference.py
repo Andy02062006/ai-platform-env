@@ -12,8 +12,10 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from openai import OpenAI
+# Add project root to sys.path to ensure 'server' package is discoverable
+sys.path.append(str(Path(__file__).parent))
 
+from openai import OpenAI
 from server.models import Action
 from server.env import AIPlatformEnv
 
@@ -31,17 +33,19 @@ MAX_TOKENS = 300
 SYSTEM_PROMPT = textwrap.dedent(
     """
     You are an AI research assistant. Your goal is to maximize performance in AIPlatformEnv.
-    Workflow:
-    1. plan_task: Describe the intended approach.
-    2. submit_query: Submit the query using relevant keywords.
-    3. compare_responses: Analyze candidate responses.
-    4. rate_response: Provide a confidence score for the best candidate.
-    5. select_response: Finalize by selecting the most accurate index.
+    The environment's grader rewards high-quality autonomous research workflows. 
+    
+    MANDATORY WORKFLOW:
+    1. plan_task: ALWAYS start by describing your research plan.
+    2. submit_query: Use descriptive queries with relevant keywords.
+    3. refine_query: If initial responses are weak, refine your search to improve quality.
+    4. compare_responses: Use this to analyze the trade-offs between candidates.
+    5. summarize: Use this for medium/hard tasks to consolidate knowledge.
+    6. rate_response: Provide a precise score in [0.0, 1.0] reflecting the best candidate's RELEVANCE.
+    7. select_response: Finalize by selecting the index of the most accurate response.
 
-    Guidelines:
-    - Use provided keywords in your queries.
-    - Avoid redundant turns; aim for efficiency.
-    - Respond strictly in JSON format.
+    To get a high score, you must demonstrate "Action Diversity"—don't just skip to selection.
+    Respond strictly in JSON format.
     """
 ).strip()
 
@@ -51,56 +55,72 @@ def log_start(task: str, env: str, model: str) -> None:
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
-    print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
-        flush=True,
-    )
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-def get_model_action(client: OpenAI, history: List[str], current_obs: str) -> Action:
-    history_block = "\n".join(history[-5:]) if history else "None"
-    user_prompt = f"History:\n{history_block}\n\nCurrent Observation:\n{current_obs}\n\nChoose your next action (JSON):"
+def get_model_action(client: OpenAI, history: List[Action], current_obs: str) -> Action:
+    history_block = "\n".join([f"- {a.type}: {json.dumps(a.model_dump(exclude_none=True))}" for a in history[-5:]]) if history else "None"
+    prompt = textwrap.dedent(f"""
+        Analyze the current observation and history, then decide on the next strategic action.
+        
+        Available Actions:
+        - plan_task: {{"type": "plan_task", "plan": "..."}}
+        - submit_query: {{"type": "submit_query", "query": "..."}}
+        - refine_query: {{"type": "refine_query", "query": "..."}}
+        - compare_responses: {{"type": "compare_responses"}}
+        - summarize: {{"type": "summarize"}}
+        - rate_response: {{"type": "rate_response", "score": 0.0}}
+        - select_response: {{"type": "select_response", "selected_index": 0}}
+        
+        Current History:
+        {history_block}
+
+        Current Observation:
+        {current_obs}
+
+        Return ONLY the JSON action object.
+    """).strip()
     
+    content = "INITIAL_STATE"
     try:
         completion = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": prompt},
             ],
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
+            response_format={"type": "json_object"}
         )
         content = (completion.choices[0].message.content or "").strip()
-        
-        # Clean up possible markdown blocks
-        if content.startswith("```json"):
-            content = content[7:-3].strip()
-        elif content.startswith("```"):
-            content = content[3:-3].strip()
-            
         data = json.loads(content)
+        
+        # Heuristic fix for some common LLM nesting errors
+        if "action" in data and isinstance(data["action"], dict):
+            data = data["action"]
+            
         return Action(**data)
-    except Exception as exc:
-        # Fallback action
-        if "rate" not in str(history):
-            return Action(type="submit_query", query="Tell me more about this topic.")
-        return Action(type="select_response", selected_index=0)
+    except Exception as e:
+        print(f"[DEBUG] Model returned invalid action: {content}. Error: {e}")
+        # Logical fallback instead of crashing
+        if not history:
+            return Action(type="plan_task", plan="I will start by analyzing the requirements.")
+        return Action(type="rate_response", score=0.5)
 
 
 def main():
-    try:
-        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN or "dummy-token")
-    except Exception as e:
-        print(f"[DEBUG] Client initialization failed: {e}")
-        return
+    if not HF_TOKEN:
+        raise ValueError("HF_TOKEN (or META_API_KEY) environment variable is not set.")
+    
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
     for task_name in ["easy", "medium", "hard"]:
         try:
-            env = AIPlatformEnv(seed=42)
+            env = AIPlatformEnv()
         except Exception as e:
             print(f"[DEBUG] Environment initialization failed: {e}")
             continue
@@ -108,72 +128,44 @@ def main():
         rewards: List[float] = []
         actions_taken = []
         steps_taken = 0
-        
         log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
         
         try:
             obs, info = env.reset(task_name)
-            
-            # Deterministic Optimization Strategy
-            # This ensures stable benchmarking by following the optimal path.
-            if task_name == "easy":
-                optimal_sequence = ["plan_task", "submit_query", "compare_responses", "rate_response", "select_response"]
-            else:
-                optimal_sequence = ["plan_task", "submit_query", "compare_responses", "refine_query", "summarize", "rate_response", "select_response"]
-            
-            for step_idx, action_type in enumerate(optimal_sequence):
-                if action_type == "plan_task":
-                    action = Action(type="plan_task", plan=f"Optimize {task_name} task via logical flow.")
-                elif action_type == "submit_query":
-                    # Inject keywords directly from the task registry to guarantee high relevance
-                    task_keywords = info.get("target_keywords", env.current_task.target_keywords if env.current_task else [])
-                    query = f"Provide information about {' '.join(task_keywords)}."
-                    action = Action(type="submit_query", query=query)
-                elif action_type == "refine_query":
-                    # Improve initial relevance
-                    query = f"Provide even more details about {task_name}."
-                    action = Action(type="refine_query", query=query)
-                elif action_type == "compare_responses":
-                    action = Action(type="compare_responses")
-                elif action_type == "summarize":
-                    action = Action(type="summarize")
-                elif action_type == "rate_response":
-                    # Smart calibration: find the best relevance and rate it precisely
-                    best_rel = max([r.relevance for r in obs.responses]) if obs.responses else 1.0
-                    action = Action(type="rate_response", score=best_rel)
-                elif action_type == "select_response":
-                    # Select the best response index
-                    best_idx = 0
-                    if obs.responses:
-                        best_idx = next(i for i, r in enumerate(obs.responses) if r.relevance == max(rel.relevance for rel in obs.responses))
-                    action = Action(type="select_response", selected_index=best_idx)
+            terminated = False
+            truncated = False
+
+            while not (terminated or truncated) and steps_taken < MAX_STEPS:
+                obs_data = {
+                    "current_task": task_name,
+                    "turn": steps_taken + 1,
+                    "max_turns": MAX_STEPS,
+                    "responses_count": len(obs.responses),
+                    "responses": [{"index": i, "text": r.text} for i, r in enumerate(obs.responses)],
+                    "history": obs.history
+                }
                 
+                action = get_model_action(client, actions_taken, json.dumps(obs_data))
                 obs, reward, terminated, truncated, info = env.step(action)
+                
                 rewards.append(reward.value)
                 actions_taken.append(action)
-                steps_taken = step_idx + 1
+                steps_taken += 1
                 log_step(step=steps_taken, action=action.type, reward=reward.value, done=(terminated or truncated), error=None)
                 
                 if terminated or truncated:
                     break
 
-            # End of episode: run grader
             from server.tasks import GRADERS
             difficulty = info.get("difficulty", task_name)
             grader_fn = GRADERS.get(difficulty)
+            final_score = grader_fn(actions_taken, env.state()) if grader_fn else 0.05
             
-            final_score = 0.0
-            if grader_fn:
-                final_score = grader_fn(actions_taken, env.state())
-            
-            # Ensure strictly between 0 and 1 (0.0 < score < 1.0)
             final_score = max(0.01, min(0.99, final_score))
-            success = final_score >= 0.5
-            
-            log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
+            log_end(success=(final_score >= 0.5), steps=steps_taken, score=final_score, rewards=rewards)
             
         except Exception as e:
-            # print(f"[DEBUG] Task {task_name} failed: {e}")
+            log_step(step=steps_taken + 1, action="error", reward=0.0, done=True, error=str(e))
             log_end(success=False, steps=steps_taken, score=0.01, rewards=rewards)
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ dependencies:
 # ── Entry points ───────────────────────────────────────────────────────────
 entry_points:
   env_class: server.env.AIPlatformEnv      # import path for the environment class
-  baseline:  server.inference.main          # entry point using the compliant inference script
+  baseline:  inference.main          # entry point using the compliant inference script
 
 # ── Interface models ───────────────────────────────────────────────────────
 # References to the Pydantic models that define the agent–env contract.
